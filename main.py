@@ -55,37 +55,42 @@ Why a copier instead of a renderer:
 import os
 import shutil
 import sys
+from pathlib import Path
 
-MAX_BYTES = 1_048_576
-PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+SIZE_LIMIT = 1_048_576
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
-def main() -> int:
-    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "entry.png")
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
-    os.makedirs(out_dir, exist_ok=True)
-    dst = os.path.join(out_dir, "entry.png")
-    # Cheap format check first: read only the 8-byte PNG magic, so a
-    # wrong file fails fast before the size check and the copy.
-    with open(src, "rb") as f:
-        magic = f.read(8)
-    if magic != PNG_MAGIC:
-        print("entry.png is not a PNG file", file=sys.stderr)
-        return 1
-    if os.path.getsize(src) > MAX_BYTES:
-        print("entry.png exceeds the 1 MiB limit", file=sys.stderr)
-        return 1
-    shutil.copyfile(src, dst)
-    # Determinism guard: the grader runs this twice and both runs must
-    # write identical bytes, so confirm the copy matches the source.
-    with open(src, "rb") as f:
-        src_bytes = f.read()
-    with open(dst, "rb") as f:
-        dst_bytes = f.read()
-    if src_bytes != dst_bytes:
-        print("copy mismatch between entry.png and output", file=sys.stderr)
-        return 1
-    print(f"wrote {dst} ({len(dst_bytes)} bytes)")
+def _head(path, count):
+    with open(path, "rb") as handle:
+        return handle.read(count)
+
+
+def _fail(message):
+    print(message, file=sys.stderr)
+    return 1
+
+
+def main():
+    entry = Path(__file__).resolve().parent / "entry.png"
+    target_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / "entry.png"
+    # Cheap format check first: only the signature bytes are read, so a
+    # wrong file fails fast before the size check and the copy happen.
+    if _head(entry, len(PNG_SIGNATURE)) != PNG_SIGNATURE:
+        return _fail("entry.png is not a PNG file")
+    if entry.stat().st_size > SIZE_LIMIT:
+        return _fail("entry.png exceeds the 1 MiB limit")
+    shutil.copyfile(entry, target)
+    # Second pass over both files: the grader runs this twice and both
+    # runs must write identical bytes, so a truncated copy is caught
+    # here instead of reaching the grader as a corrupt entry.
+    before = entry.read_bytes()
+    after = target.read_bytes()
+    if before != after:
+        return _fail("copy mismatch between entry.png and output")
+    print(f"wrote {target} ({len(after)} bytes)")
     return 0
 
 
