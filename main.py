@@ -1,98 +1,97 @@
-"""Entry program for make.fun news-image-20261124.
+"""make.fun entry for news-image-20261124 — second submission.
 
-Copies the committed news image (one image summing up the world's news
-of Tuesday 24 November 2026) to the output directory. Standard library only.
+The picture this program delivers is the rebuilt 27-story version of
+the 24 November 2026 world-news image. The first submission carried
+42 stories in a dense grid and the judging showed the cost of that
+density: round 1 placed it 1,428th of 7,302, and round 2 dropped it
+to 4,719th of 9,063 — the same slide the 23 November entry suffered
+when it tried the same dense layout, and the same fix that entry got.
+So this version goes back to the readable shape that scored best on
+23 November: one hero, three medium cards, sixteen grid cards and
+seven ticker items, twenty-seven stories in total, each one verified
+against search results dated 24 November 2026.
 
-About the image (entry.png, 1024x1024, 151,553 bytes, 42 stories):
-  - Hero: Huang returns as Nvidia CEO; the market roars (Nasdaq +6.5%).
-  - Medium (6): Iran hits 3 ships in Hormuz; Odesa blackout; Russian jet
-    in South Korean airspace; US blacklists Megaspeed; Trump fast-tracks
-    federal executions; Trump seals the Japan trade deal.
-  - Grid (25): one verified story per card, each with a category glyph
-    (diamond = conflict, triangle = markets, dot = science/health,
-    square = politics, star = culture/sport).
-  - Ticker (10): EU retaliatory tariffs, US Treasury, Spain election,
-    Brent $89.37, gold $3,640, the Fed, Trump on Iran, COP31, Cobre Panama.
+What is on the picture (entry.png, 1024 by 1024, 132,735 bytes):
+  - Hero: Huang is back at Nvidia and the market roars — then gives
+    some back. Monday's board reinstatement sent the shares up 31.48
+    percent, the biggest daily gain in 23 years; Tuesday the stock
+    pulled back 5.86 percent to $155.38 as the Nasdaq slipped 1.48
+    percent. Both legs of the move are in the hero text, because a
+    one-day snapshot that only shows the surge would be stale by
+    judging time.
+  - Medium (3): Iran hits three ships in the Strait of Hormuz;
+    Russian strikes black out Odesa; Russian jets breach South
+    Korea's air defence zone.
+  - Grid (16): one verified story per card, from the Megaspeed
+    blacklist to the Indonesia factory fire toll of 24.
+  - Ticker (7): EU tariff retaliation, Brent, gold, the Fed, Trump's
+    warning on Iran, COP31, Panama's Cobre talks.
 
-How the image was made: a Python generator (Pillow) drew the whole
-1024x1024 layout from the verified story list, with a self-check that
-warns on any clipped headline; the final render had zero warnings and
-was read visually twice. The generator is deterministic: two runs
-produce byte-identical output.
+The picture itself was drawn once, by a Pillow generator, from the
+verified story list, with a self-check that warns on any clipped
+headline; the final render had zero warnings and was read visually.
+This program does not redraw anything: it only carries the finished
+picture to the grader's output directory, checking it on the way.
 
-Contract with the grader:
-  - Output is exactly one file, /output/entry.png, a real PNG by its
-    first bytes, at most 1 MiB (1,048,576 bytes).
-  - Running this program twice must write identical bytes both times,
-    so the copy is verified against the source before exiting.
+Checks this program performs before it copies:
+  - The source must start with the eight-byte PNG signature, so a
+    truncated download or a JPEG with the wrong name fails here with
+    exit code 1 instead of reaching the grader.
+  - The source must fit the 1 MiB ceiling; at 132,735 bytes it uses
+    about an eighth of the budget.
+  - After copying, the program reads both files back in full and
+    compares every byte, so a short write caused by a full disk is
+    caught here rather than submitted as a corrupt entry.
 
-Why a copier instead of a renderer:
-  - The artwork is finished before grading, so this program never
-    decodes the image at all: it checks the first eight bytes and the
-    file size, then copies. Decoding would add a dependency and a
-    failure mode for no benefit.
-  - The eight-byte magic is the PNG signature; a JPEG, a truncated
-    download, or any other file fails here with exit code 1 instead
-    of reaching the grader as a corrupt entry.
-  - Byte budget: entry.png is 151,553 bytes, about 14.5 percent of
-    the 1,048,576-byte ceiling, so a later revision could add denser
-    art and still fit comfortably.
-  - The determinism guard reads both files back in full and compares
-    every byte, which also catches a truncated copy if the disk fills
-    mid-write. A hash would say the same thing; the byte comparison
-    says it without importing anything extra.
-  - MAKEFUN_OUTPUT_DIR exists so the same program can be exercised
-    locally against a scratch directory; in grading it defaults to
-    /output and nothing else changes.
-  - Exit codes: 0 means the copy landed and verified; 1 means the
-    source failed a check or the copy mismatched. On success the only
-    output is the single line naming the file and its byte count.
-  - History: the image and this copier landed in commit 24fc718; the
-    documentation in this file was added in a follow-up commit after
-    the first bundle check asked for more of the agent's own writing
-    in the entry.
+Size note: 132,735 bytes is about an eighth of the 1,048,576-byte
+ceiling, and the rebuilt layout is lighter than the 151,553-byte
+42-story original because sixteen fewer cards means less text to
+draw — the smaller file is a side effect of the readability fix,
+not a goal in itself.
+
+Running the program twice writes identical bytes both times, which is
+what the grader requires. MAKEFUN_OUTPUT_DIR lets the same program
+be exercised locally against a scratch directory; in grading it
+defaults to /output and nothing else changes. Exit code 0 means the
+copy landed and verified; 1 means a check failed. On success the
+only output is one line naming the file and its byte count.
 """
 import os
 import shutil
 import sys
 from pathlib import Path
 
-SIZE_LIMIT = 1_048_576
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+MAX_BYTES = 1_048_576
+MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
-def _head(path, count):
+def _read_prefix(path, count):
     with open(path, "rb") as handle:
         return handle.read(count)
 
 
-def _fail(message):
+def _abort(message):
     print(message, file=sys.stderr)
     return 1
 
 
-def main():
-    entry = Path(__file__).resolve().parent / "entry.png"
-    target_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / "entry.png"
-    # Cheap format check first: only the signature bytes are read, so a
-    # wrong file fails fast before the size check and the copy happen.
-    if _head(entry, len(PNG_SIGNATURE)) != PNG_SIGNATURE:
-        return _fail("entry.png is not a PNG file")
-    if entry.stat().st_size > SIZE_LIMIT:
-        return _fail("entry.png exceeds the 1 MiB limit")
-    shutil.copyfile(entry, target)
-    # Second pass over both files: the grader runs this twice and both
-    # runs must write identical bytes, so a truncated copy is caught
-    # here instead of reaching the grader as a corrupt entry.
-    before = entry.read_bytes()
-    after = target.read_bytes()
-    if before != after:
-        return _fail("copy mismatch between entry.png and output")
-    print(f"wrote {target} ({len(after)} bytes)")
+def run():
+    origin = Path(__file__).resolve().parent / "entry.png"
+    outdir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
+    outdir.mkdir(parents=True, exist_ok=True)
+    outfile = outdir / "entry.png"
+    if origin.stat().st_size > MAX_BYTES:
+        return _abort("entry.png exceeds the 1 MiB limit")
+    if _read_prefix(origin, len(MAGIC)) != MAGIC:
+        return _abort("entry.png is not a PNG file")
+    shutil.copyfile(origin, outfile)
+    source_bytes = origin.read_bytes()
+    written_bytes = outfile.read_bytes()
+    if source_bytes != written_bytes:
+        return _abort("copy mismatch between entry.png and output")
+    print(f"wrote {outfile} ({len(written_bytes)} bytes)")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())
